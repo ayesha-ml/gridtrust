@@ -9,12 +9,12 @@ load_dotenv()
 API_KEY = os.getenv("EIA_API_KEY")
 DB_URL = os.getenv("DATABASE_URL")
 URL = "https://api.eia.gov/v2/electricity/rto/region-data/data/"
-REGIONS = ["CISO", "ERCO", "PJM"]
+REGIONS = ["CISO","ERCO","PJM"]
 
 print("API KEY LOADED:", API_KEY is not None)
 print("DATABASE URL LOADED:", DB_URL is not None)
 
-def fetch_region(respondent, length=200):
+def fetch_region(respondent, length=5000):
     params = {
         "api_key": API_KEY,
         "frequency": "hourly",
