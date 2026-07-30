@@ -1,4 +1,5 @@
 import os
+import logging
 import joblib
 import pandas as pd
 import psycopg2
@@ -10,20 +11,28 @@ load_dotenv()
 
 DB_URL = os.getenv("DATABASE_URL")
 
-FEATURES = [
-    "lag_1h",
-    "lag_24h",
-    "lag_168h",
-    "hour_of_day",
-    "day_of_week",
-    "is_weekend",
-]
+from src.config import (
+    FEATURES,
+    REGIONS,
+    TRAIN_RATIO,
+    CALIBRATION_RATIO,
+    TEST_RATIO,
+    LOWER_ALPHA,
+    UPPER_ALPHA,
+    N_ESTIMATORS,
+    LEARNING_RATE,
+    RANDOM_STATE,
+    MODEL_DIR,
+    OUTPUT_DIR,
+)
 
-REGIONS = ["CISO", "ERCO", "PJM"]
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
-TRAIN_RATIO = 0.70
-CALIBRATION_RATIO = 0.20
-TEST_RATIO = 0.10
+logger = logging.getLogger(__name__)
 
 
 def load_features(respondent):
@@ -51,6 +60,7 @@ def time_series_split(df):
         raise ValueError("Split ratios must sum to 1.0")
 
     train_end = int(len(df) * TRAIN_RATIO)
+
     calibration_end = int(
         len(df) * (TRAIN_RATIO + CALIBRATION_RATIO)
     )
@@ -64,65 +74,86 @@ def time_series_split(df):
 
 def train_quantile_models(respondent):
 
-    print(f"\nTraining quantile models for {respondent}...")
+    logger.info("Training quantile models for %s...", respondent)
 
     df = load_features(respondent)
 
     train, calibration, test = time_series_split(df)
 
-    print("\nDemand Distribution")
+    logger.info("Demand Distribution")
 
-    print("\nTrain")
-    print(train["demand"].describe())
+    logger.info("\nTrain\n%s", train["demand"].describe())
 
-    print("\nCalibration")
-    print(calibration["demand"].describe())
+    logger.info("\nCalibration\n%s", calibration["demand"].describe())
 
-    print("\nTest")
-    print(test["demand"].describe())
+    logger.info("\nTest\n%s", test["demand"].describe())
 
     X_train = train[FEATURES]
     y_train = train["demand"]
 
     lower_model = LGBMRegressor(
         objective="quantile",
-        alpha=0.05,
-        n_estimators=500,
-        learning_rate=0.05,
-        random_state=42,
+        alpha=LOWER_ALPHA,
+        n_estimators=N_ESTIMATORS,
+        learning_rate=LEARNING_RATE,
+        random_state=RANDOM_STATE,
         verbosity=-1,
     )
 
     upper_model = LGBMRegressor(
         objective="quantile",
-        alpha=0.95,
-        n_estimators=500,
-        learning_rate=0.05,
-        random_state=42,
+        alpha=UPPER_ALPHA,
+        n_estimators=N_ESTIMATORS,
+        learning_rate=LEARNING_RATE,
+        random_state=RANDOM_STATE,
         verbosity=-1,
     )
 
     lower_model.fit(X_train, y_train)
     upper_model.fit(X_train, y_train)
 
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("outputs", exist_ok=True)
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    joblib.dump(lower_model,f"models/{respondent.lower()}_lower.pkl")
+    joblib.dump(
+        lower_model,
+        os.path.join(
+            MODEL_DIR,
+            f"{respondent.lower()}_lower.pkl",
+        ),
+    )
 
-    joblib.dump(upper_model,f"models/{respondent.lower()}_upper.pkl")
+    joblib.dump(
+        upper_model,
+        os.path.join(
+            MODEL_DIR,
+            f"{respondent.lower()}_upper.pkl",
+        ),
+    )
 
-    calibration.to_csv(f"outputs/{respondent.lower()}_calibration.csv",index=False,)
+    calibration.to_csv(
+        os.path.join(
+            OUTPUT_DIR,
+            f"{respondent.lower()}_calibration.csv",
+        ),
+        index=False,
+    )
 
-    test.to_csv(f"outputs/{respondent.lower()}_test.csv",index=False,)
+    test.to_csv(
+        os.path.join(
+            OUTPUT_DIR,
+            f"{respondent.lower()}_test.csv",
+        ),
+        index=False,
+    )
 
-    print("Saved lower model")
-    print("Saved upper model")
-    print("Saved calibration dataset")
-    print("Saved test dataset")
-    print(f"Train rows: {len(train)}")
-    print(f"Calibration rows: {len(calibration)}")
-    print(f"Test rows: {len(test)}")
+    logger.info("Saved lower model")
+    logger.info("Saved upper model")
+    logger.info("Saved calibration dataset")
+    logger.info("Saved test dataset")
+    logger.info("Train rows: %d", len(train))
+    logger.info("Calibration rows: %d", len(calibration))
+    logger.info("Test rows: %d", len(test))
 
 
 if __name__ == "__main__":
