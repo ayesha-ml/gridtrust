@@ -1,56 +1,86 @@
+import logging
 import os
+
 import joblib
 import numpy as np
 import pandas as pd
 
-FEATURES = [
-    "lag_1h",
-    "lag_24h",
-    "lag_168h",
-    "hour_of_day",
-    "day_of_week",
-    "is_weekend",
-]
+from src.config import FEATURES, REGIONS
 
-REGIONS = ["CISO", "ERCO", "PJM"]
+logger = logging.getLogger(__name__)
+
 
 def load_objects(respondent):
     """
-    Load the saved models and datasets.
+    Load trained models and evaluation datasets.
     """
 
-    lower_model = joblib.load(f"models/{respondent.lower()}_lower.pkl")
+    lower_model = joblib.load(
+        f"models/{respondent.lower()}_lower.pkl"
+    )
 
-    upper_model = joblib.load(f"models/{respondent.lower()}_upper.pkl")
+    upper_model = joblib.load(
+        f"models/{respondent.lower()}_upper.pkl"
+    )
 
-    calibration = pd.read_csv(f"outputs/{respondent.lower()}_calibration.csv")
+    calibration = pd.read_csv(
+        f"outputs/{respondent.lower()}_calibration.csv"
+    )
 
-    test = pd.read_csv(f"outputs/{respondent.lower()}_test.csv")
+    test = pd.read_csv(
+        f"outputs/{respondent.lower()}_test.csv"
+    )
 
-    return lower_model, upper_model, calibration, test
+    return (
+        lower_model,
+        upper_model,
+        calibration,
+        test,
+    )
 
 
-def calculate_nonconformity(lower_pred, upper_pred, actual):
+def calculate_nonconformity(
+    lower_pred,
+    upper_pred,
+    actual,
+):
+    """
+    Compute conformal nonconformity scores.
+    """
 
     lower_error = lower_pred - actual
     upper_error = actual - upper_pred
 
-    scores = np.maximum.reduce([lower_error,upper_error,np.zeros(len(actual))])
+    scores = np.maximum.reduce(
+        [
+            lower_error,
+            upper_error,
+            np.zeros(len(actual)),
+        ]
+    )
 
     return scores
 
 
 def calculate_q_hat(scores, alpha=0.10):
     """
-    Compute the conformal calibration value.
+    Compute conformal calibration constant.
     """
-    q_hat = np.quantile(scores,1 - alpha,method="higher")
 
-    return q_hat
+    return np.quantile(
+        scores,
+        1 - alpha,
+        method="higher",
+    )
 
-def apply_conformal(lower_pred, upper_pred, q_hat):
+
+def apply_conformal(
+    lower_pred,
+    upper_pred,
+    q_hat,
+):
     """
-    Expand the prediction interval using the conformal calibration value.
+    Expand prediction interval using conformal calibration.
     """
 
     lower = lower_pred - q_hat
@@ -58,18 +88,30 @@ def apply_conformal(lower_pred, upper_pred, q_hat):
 
     return lower, upper
 
-def evaluate_coverage(actual, lower, upper):
+
+def evaluate_coverage(
+    actual,
+    lower,
+    upper,
+):
     """
-    measures how often the true demand falls inside the conformal prediction interval.
+    Evaluate empirical coverage and average interval width.
     """
 
-    inside_interval = ((actual >= lower) &(actual <= upper) )
+    inside_interval = (
+        (actual >= lower)
+        & (actual <= upper)
+    )
 
     coverage = inside_interval.mean()
 
-    average_width = (upper - lower).mean()
+    average_width = (
+        upper - lower
+    ).mean()
 
     return coverage, average_width
+
+
 if __name__ == "__main__":
 
     TARGET_COVERAGE = 0.90
@@ -78,17 +120,30 @@ if __name__ == "__main__":
 
     for region in REGIONS:
 
-        print(f"\n{'=' * 60}")
-        print(f"Running conformal prediction for {region}")
-        print(f"{'=' * 60}")
+        logger.info("=" * 70)
+        logger.info(
+            "Running conformal prediction for %s",
+            region,
+        )
+        logger.info("=" * 70)
 
-        lower_model, upper_model, calibration, test = load_objects(region)
+        (
+            lower_model,
+            upper_model,
+            calibration,
+            test,
+        ) = load_objects(region)
 
         X_calibration = calibration[FEATURES]
         y_calibration = calibration["demand"]
 
-        lower_calibration = lower_model.predict(X_calibration)
-        upper_calibration = upper_model.predict(X_calibration)
+        lower_calibration = lower_model.predict(
+            X_calibration
+        )
+
+        upper_calibration = upper_model.predict(
+            X_calibration
+        )
 
         scores = calculate_nonconformity(
             lower_calibration,
@@ -101,17 +156,24 @@ if __name__ == "__main__":
         X_test = test[FEATURES]
         y_test = test["demand"]
 
-        lower_test = lower_model.predict(X_test)
-        upper_test = upper_model.predict(X_test)
+        lower_test = lower_model.predict(
+            X_test
+        )
 
-        raw_inside = ((y_test >= lower_test) &(y_test <= upper_test))
+        upper_test = upper_model.predict(
+            X_test
+        )
+
+        raw_inside = (
+            (y_test >= lower_test)
+            & (y_test <= upper_test)
+        )
 
         raw_coverage = raw_inside.mean()
 
-        raw_width = (upper_test - lower_test).mean()
-
-        print(f"Raw Coverage      : {raw_coverage:.2%}")
-        print(f"Raw Interval Width: {raw_width:.2f}")
+        raw_width = (
+            upper_test - lower_test
+        ).mean()
 
         lower_conformal, upper_conformal = apply_conformal(
             lower_test,
@@ -125,22 +187,52 @@ if __name__ == "__main__":
             upper_conformal,
         )
 
-        coverage_gap = TARGET_COVERAGE - coverage
+        coverage_gap = (
+            TARGET_COVERAGE - coverage
+        )
 
-        print(f"Calibration rows : {len(calibration)}")
-        print(f"Test rows        : {len(test)}")
-        print(f"q̂               : {q_hat:.2f}")
-        print(f"Coverage         : {coverage:.2%}")
-        print(f"Coverage Gap     : {coverage_gap:.2%}")
-        print(f"Average Width    : {average_width:.2f}")
+        logger.info(
+            "Calibration rows : %d",
+            len(calibration),
+        )
+        logger.info(
+            "Test rows        : %d",
+            len(test),
+        )
+        logger.info(
+            "Raw coverage     : %.2f%%",
+            raw_coverage * 100,
+        )
+        logger.info(
+            "Raw width        : %.2f",
+            raw_width,
+        )
+        logger.info(
+            "q_hat            : %.2f",
+            q_hat,
+        )
+        logger.info(
+            "Coverage         : %.2f%%",
+            coverage * 100,
+        )
+        logger.info(
+            "Coverage gap     : %.2f%%",
+            coverage_gap * 100,
+        )
+        logger.info(
+            "Average width    : %.2f",
+            average_width,
+        )
 
-        results.append({
-            "region": region,
-            "q_hat": q_hat,
-            "coverage": coverage,
-            "coverage_gap": coverage_gap,
-            "average_width": average_width,
-        })
+        results.append(
+            {
+                "region": region,
+                "q_hat": q_hat,
+                "coverage": coverage,
+                "coverage_gap": coverage_gap,
+                "average_width": average_width,
+            }
+        )
 
         output = test.copy()
 
@@ -157,7 +249,10 @@ if __name__ == "__main__":
             & (y_test <= upper_conformal)
         )
 
-        os.makedirs("outputs", exist_ok=True)
+        os.makedirs(
+            "outputs",
+            exist_ok=True,
+        )
 
         output.to_csv(
             f"outputs/{region.lower()}_conformal_predictions.csv",
@@ -171,12 +266,13 @@ if __name__ == "__main__":
         index=False,
     )
 
-    print("\n")
-    print("=" * 70)
-    print("CONFORMAL PREDICTION SUMMARY")
-    print("=" * 70)
-
-    print(
+    logger.info("=" * 70)
+    logger.info(
+        "CONFORMAL PREDICTION SUMMARY"
+    )
+    logger.info("=" * 70)
+    logger.info(
+        "\n%s",
         results_df.to_string(
             index=False,
             formatters={
@@ -185,7 +281,5 @@ if __name__ == "__main__":
                 "coverage_gap": "{:.2%}".format,
                 "average_width": "{:.2f}".format,
             },
-        )
+        ),
     )
-
-    

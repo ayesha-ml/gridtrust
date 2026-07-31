@@ -1,22 +1,27 @@
-import os
-import requests
-import psycopg2
-from dotenv import load_dotenv
+import logging
 from datetime import datetime
 
-load_dotenv()
+import psycopg2
+import requests
 
-API_KEY = os.getenv("EIA_API_KEY")
-DB_URL = os.getenv("DATABASE_URL")
-URL = "https://api.eia.gov/v2/electricity/rto/region-data/data/"
-REGIONS = ["CISO","ERCO","PJM"]
+from src.config import (
+    DATABASE_URL,
+    EIA_API_KEY,
+    EIA_BASE_URL,
+    REGIONS,
+    FETCH_LENGTH,
+)
 
-print("API KEY LOADED:", API_KEY is not None)
-print("DATABASE URL LOADED:", DB_URL is not None)
+logger = logging.getLogger(__name__)
 
-def fetch_region(respondent, length=5000):
+
+logger.info("API KEY LOADED: %s", EIA_API_KEY is not None)
+logger.info("DATABASE URL LOADED: %s", DATABASE_URL is not None)
+
+def fetch_region(respondent, length=FETCH_LENGTH):
+
     params = {
-        "api_key": API_KEY,
+        "api_key": EIA_API_KEY,
         "frequency": "hourly",
         "data[0]": "value",
         "facets[respondent][]": respondent,
@@ -25,39 +30,54 @@ def fetch_region(respondent, length=5000):
         "sort[0][direction]": "desc",
         "length": length,
     }
-    response = requests.get(URL, params=params)
+
+    response = requests.get(EIA_BASE_URL, params=params)
+
     response.raise_for_status()
+
     return response.json()["response"]["data"]
 
+
 def insert_rows(rows):
-    conn = psycopg2.connect(DB_URL)
+
+    conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
     for row in rows:
+
         period = datetime.strptime(
             row["period"],
-            "%Y-%m-%dT%H"
+            "%Y-%m-%dT%H",
         )
 
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO raw.electricity_demand
                 (respondent, period, value)
             VALUES (%s, %s, %s)
             ON CONFLICT (respondent, period) DO NOTHING
-        """,
-        (
-            row["respondent"],
-            period,
-            row["value"]
-        ))
+            """,
+            (
+                row["respondent"],
+                period,
+                row["value"],
+            ),
+        )
 
     conn.commit()
+
     cur.close()
     conn.close()
 
+
 if __name__ == "__main__":
+
     for region in REGIONS:
-        print(f"Fetching {region}...")
+
+        logger.info("Fetching %s...", region)
+
         data = fetch_region(region)
+
         insert_rows(data)
-        print(f"Inserted {len(data)} rows for {region}")
+
+        logger.info("Inserted %d rows for %s", len(data), region)
