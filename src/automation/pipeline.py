@@ -2,6 +2,11 @@ import logging
 import subprocess
 import time
 import sys
+from src.reporting.report import generate_report
+from src.notifications.summary import generate_summary
+from src.notifications.templates import build_email
+from src.notifications.email_sender import send_email
+from src.config import EMAIL_ADDRESS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,8 +92,31 @@ if __name__ == "__main__":
     )
 
     logger.info("=" * 70)
+    logger.info("Generating monitoring report...")
+
+    report = generate_report()
+
+    logger.info("Generating AI executive summary...")
+
+    ai_summary = generate_summary(report)
+
+    logger.info("Building HTML report...")
+
+    html = build_email(
+        report,
+        ai_summary,
+    )
+
+    logger.info("Sending email...")
+
+    send_email(
+        recipient=EMAIL_ADDRESS,
+        subject="GRIDTRUST Daily Forecast Report",
+        html=html,
+    )
+
+    logger.info("=" * 70)
     logger.info("GRIDTRUST PIPELINE FINISHED SUCCESSFULLY")
     logger.info("=" * 70)
-
 
     

@@ -82,3 +82,6 @@ CONFORMAL_ALPHA = 0.10
 MODEL_DIR = "models"
 OUTPUT_DIR = "outputs"
 LOG_DIR = "logs"
+
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
