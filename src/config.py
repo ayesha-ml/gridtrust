@@ -34,7 +34,7 @@ REGIONS = [
     "PJM",
 ]
 
-FETCH_LENGTH = 50
+FETCH_LENGTH = 5000
 
 # ----------------------------------------------------------
 # feature engineering
