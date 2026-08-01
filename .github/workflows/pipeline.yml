@@ -4,11 +4,8 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Runs every day at 06:00 UTC (11:00 PKT)
-    - cron: "0 6 * * *"
-
-permissions:
-  contents: write
+    # Runs every Monday and Friday at 06:00 UTC (11:00 PKT)
+    - cron: "0 6 * * 1,5"
 
 jobs:
   forecast:
@@ -39,22 +36,3 @@ jobs:
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
           python -m src.automation.pipeline
-
-      - name: Commit Updated Forecasts
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add outputs/
-
-          if git diff --cached --quiet; then
-            echo "No forecast changes detected."
-          else
-            git commit -m "chore: update daily forecasts"
-          fi
-
-      - name: Push Changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref_name }}
